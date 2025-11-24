@@ -1,14 +1,38 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use pinocchio::{
+    ProgramResult, account_info::AccountInfo, entrypoint, program_error::ProgramError,
+    pubkey::Pubkey,
+};
+use pinocchio_pubkey::declare_id;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+pub mod instructions;
+pub use instructions::*;
+
+pub mod state;
+pub use state::*;
+
+pub mod errors;
+pub use errors::*;
+
+pub mod helpers;
+pub use helpers::*;
+
+pub mod constants;
+pub use constants::*;
+
+declare_id!("961YdRKb41e47DoC8JM973Xp52dVQ1NQ3P4bUm82eT8D");
+entrypoint!(process_instruction);
+
+fn process_instruction(
+    _program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    instruction_data: &[u8],
+) -> ProgramResult {
+    match instruction_data.split_first() {
+        Some((Initialize::DISCRIMINATOR, data)) => Initialize::try_from((data, accounts))?.process(),
+        Some((Contribute::DISCRIMINATOR, data)) => Contribute::try_from((data, accounts))?.process(),
+        Some((Claim::DISCRIMINATOR, _)) => Claim::try_from(accounts)?.process(),
+        Some((Refund::DISCRIMINATOR, _)) => Refund::try_from(accounts)?.process(),
+        _ => Err(ProgramError::InvalidInstructionData),
     }
 }

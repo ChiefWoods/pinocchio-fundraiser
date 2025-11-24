@@ -1,0 +1,5 @@
+pub const MIN_AMOUNT_TO_RAISE: u8 = 3;
+pub const SECONDS_TO_DAYS: i32 = 86400; // 60 * 60 * 24
+pub const MAX_CONTRIBUTION_PERCENTAGE_BPS: u16 = 1000;
+pub const PERCENTAGE_SCALER: u64 = 100;
+pub const MAX_BPS: u16 = 10_000;
