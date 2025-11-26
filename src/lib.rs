@@ -20,6 +20,8 @@ pub use helpers::*;
 pub mod constants;
 pub use constants::*;
 
+pub mod tests;
+
 declare_id!("961YdRKb41e47DoC8JM973Xp52dVQ1NQ3P4bUm82eT8D");
 entrypoint!(process_instruction);
 

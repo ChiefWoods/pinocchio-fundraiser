@@ -181,3 +181,138 @@ impl<'a> Handler<'a> for Refund<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use solana_instruction::{AccountMeta, Instruction};
+    use solana_signer::Signer;
+    use spl_associated_token_account::{
+        get_associated_token_address_with_program_id,
+        solana_program::{clock::SECONDS_PER_DAY, native_token::LAMPORTS_PER_SOL},
+    };
+
+    use crate::{
+        AccountLoad, Contributor, Fundraise,
+        tests::{
+            constants::{
+                ASSOCIATED_TOKEN_PROGRAM_ID, MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID,
+                TOKEN_PROGRAM_ID,
+            },
+            pda::{get_contributor_pda, get_fundraise_pda},
+            utils::{
+                build_and_send_transaction, forward_time, init_ata, init_mint,
+                init_wallet, setup,
+            },
+        },
+    };
+
+    #[test]
+    fn refund() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let authority = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+        let authority_ata = init_ata(litesvm, mint_to_raise, authority.pubkey(), 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        let contribute_amount: u64 = 500_000;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        forward_time(litesvm, 3600); // jump forward 1 hour
+
+        let fundraise_acc = litesvm.get_account(&fundraise_pda).unwrap();
+        let fundraise = Fundraise::load(&fundraise_acc.data.as_ref()).unwrap();
+
+        let pre_fundraise_current_amount = fundraise.get_current_amount();
+
+        let contributor_acc = litesvm.get_account(&contributor_pda).unwrap();
+        let contributor = Contributor::load(&contributor_acc.data.as_ref()).unwrap();
+
+        let contributor_amount = contributor.get_amount();
+
+        let data = vec![2u8];
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new(maker.pubkey(), false),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        let fundraise_acc = litesvm.get_account(&fundraise_pda).unwrap();
+        let fundraise = Fundraise::load(&fundraise_acc.data.as_ref()).unwrap();
+
+        let post_fundraise_current_amount = fundraise.get_current_amount();
+
+        assert_eq!(
+            pre_fundraise_current_amount,
+            post_fundraise_current_amount + contributor_amount
+        );
+
+        let contributor_acc = litesvm.get_account(&contributor_pda);
+
+        assert!(contributor_acc.is_none());
+
+        let vault = litesvm.get_account(&vault);
+
+        assert!(vault.is_none());
+    }
+}

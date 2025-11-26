@@ -164,3 +164,58 @@ impl<'a> Handler<'a> for Initialize<'a> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use solana_clock::Clock;
+    use solana_instruction::{AccountMeta, Instruction};
+    use solana_signer::Signer;
+    use spl_associated_token_account::{get_associated_token_address_with_program_id, solana_program::{clock::SECONDS_PER_DAY, native_token::LAMPORTS_PER_SOL}};
+
+    use crate::{AccountLoad, Fundraise, tests::{
+        constants::{ASSOCIATED_TOKEN_PROGRAM_ID, MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID}, pda::get_fundraise_pda, utils::{build_and_send_transaction, init_mint, init_wallet, setup}
+    }};
+
+    #[test]
+    fn initialize() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(&fundraise_pda, &mint_to_raise, &TOKEN_PROGRAM_ID);
+        let now = litesvm.get_sysvar::<Clock>().unix_timestamp;
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        let fundraise_acc = litesvm.get_account(&fundraise_pda).unwrap();
+        let fundraise = Fundraise::load(fundraise_acc.data.as_ref()).unwrap();
+
+        assert_eq!(fundraise.maker, maker.pubkey().to_bytes());
+        assert_eq!(fundraise.mint_to_raise, mint_to_raise.to_bytes());
+        assert_eq!(fundraise.get_amount_to_raise(), amount_to_raise);
+        assert_eq!(fundraise.get_time_started(), now);
+        assert_eq!(fundraise.get_duration(), duration);
+    }
+}
