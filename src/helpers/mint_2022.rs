@@ -1,23 +1,31 @@
-use pinocchio::{ProgramResult, account_info::AccountInfo, program_error::ProgramError, sysvars::{Sysvar, rent::Rent}};
+use pinocchio::{
+    ProgramResult,
+    account_info::AccountInfo,
+    program_error::ProgramError,
+    sysvars::{Sysvar, rent::Rent},
+};
 use pinocchio_system::instructions::CreateAccount;
 use pinocchio_token_2022::{instructions::InitializeMint2, state::Mint};
 
-use crate::{AccountCheck, MintInit, helpers::{TOKEN_2022_ACCOUNT_DISCRIMINATOR_OFFSET, TOKEN_2022_MINT_DISCRIMINATOR}};
+use crate::{
+    AccountCheck, MintInit,
+    helpers::{TOKEN_2022_ACCOUNT_DISCRIMINATOR_OFFSET, TOKEN_2022_MINT_DISCRIMINATOR},
+};
 
 pub struct Mint2022Account;
 
 impl AccountCheck for Mint2022Account {
     fn check(account: &AccountInfo) -> Result<(), ProgramError> {
         if account.owner().ne(&pinocchio_token_2022::ID) {
-            return Err(ProgramError::InvalidAccountOwner.into());
+            return Err(ProgramError::InvalidAccountOwner);
         }
 
         let data = account.try_borrow_data()?;
 
-        if data.len().ne(&Mint::BASE_LEN) {
-            if data[TOKEN_2022_ACCOUNT_DISCRIMINATOR_OFFSET].ne(&TOKEN_2022_MINT_DISCRIMINATOR) {
-                return Err(ProgramError::InvalidAccountData.into());
-            }
+        if data.len().ne(&Mint::BASE_LEN)
+            && data[TOKEN_2022_ACCOUNT_DISCRIMINATOR_OFFSET].ne(&TOKEN_2022_MINT_DISCRIMINATOR)
+        {
+            return Err(ProgramError::InvalidAccountData);
         }
 
         Ok(())

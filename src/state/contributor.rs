@@ -51,7 +51,7 @@ impl ContributorParams {
 
 impl SetInner for Contributor {
     type Params = ContributorParams;
-    
+
     fn set_inner(&mut self, params: Self::Params) {
         self.fundraise = params.fundraise;
         self.authority = params.authority;

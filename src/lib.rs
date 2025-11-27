@@ -4,7 +4,6 @@ use pinocchio::{
 };
 use pinocchio_pubkey::declare_id;
 
-
 pub mod instructions;
 pub use instructions::*;
 
@@ -31,8 +30,12 @@ fn process_instruction(
     instruction_data: &[u8],
 ) -> ProgramResult {
     match instruction_data.split_first() {
-        Some((Initialize::DISCRIMINATOR, data)) => Initialize::try_from((data, accounts))?.process(),
-        Some((Contribute::DISCRIMINATOR, data)) => Contribute::try_from((data, accounts))?.process(),
+        Some((Initialize::DISCRIMINATOR, data)) => {
+            Initialize::try_from((data, accounts))?.process()
+        }
+        Some((Contribute::DISCRIMINATOR, data)) => {
+            Contribute::try_from((data, accounts))?.process()
+        }
         Some((Claim::DISCRIMINATOR, _)) => Claim::try_from(accounts)?.process(),
         Some((Refund::DISCRIMINATOR, _)) => Refund::try_from(accounts)?.process(),
         _ => Err(ProgramError::InvalidInstructionData),

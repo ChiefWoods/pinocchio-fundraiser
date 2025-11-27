@@ -7,7 +7,7 @@ pub struct SystemAccount;
 impl AccountCheck for SystemAccount {
     fn check(account: &AccountInfo) -> Result<(), ProgramError> {
         if account.owner().ne(&pinocchio_system::ID) {
-            return Err(ProgramError::InvalidAccountOwner.into());
+            return Err(ProgramError::InvalidAccountOwner);
         }
 
         Ok(())

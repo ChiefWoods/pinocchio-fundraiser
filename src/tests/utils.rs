@@ -12,7 +12,10 @@ use solana_signer::Signer;
 use solana_transaction::Transaction;
 use spl_associated_token_account::{
     get_associated_token_address,
-    solana_program::{native_token::LAMPORTS_PER_SOL, program_pack::{IsInitialized, Pack}},
+    solana_program::{
+        native_token::LAMPORTS_PER_SOL,
+        program_pack::{IsInitialized, Pack},
+    },
 };
 use spl_token_2022::state::{Account as TokenAccount, AccountState, Mint};
 
@@ -22,7 +25,10 @@ pub fn setup() -> (LiteSVM, Keypair) {
     let mut litesvm = LiteSVM::new();
 
     litesvm
-        .add_program_from_file(PROGRAM_ID.to_bytes(), "target/deploy/pinocchio_fundraiser.so")
+        .add_program_from_file(
+            PROGRAM_ID.to_bytes(),
+            "target/deploy/pinocchio_fundraiser.so",
+        )
         .unwrap();
 
     let default_payer = Keypair::new();

@@ -37,7 +37,9 @@ impl ToStr for FundraiserError {
             FundraiserError::FundraiserEnded => "The fundraiser has ended",
             FundraiserError::InvalidAmount => "Invalid total amount. i should be bigger than 3",
             FundraiserError::InvalidMintToRaise => "Mint to raise does not match",
-            FundraiserError::BelowMinRaiseAmount => "The amount to raise is below the minimum required",
+            FundraiserError::BelowMinRaiseAmount => {
+                "The amount to raise is below the minimum required"
+            }
         }
     }
 }

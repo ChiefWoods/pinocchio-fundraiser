@@ -1,4 +1,7 @@
-use pinocchio::{ProgramResult, account_info::AccountInfo, program_error::ProgramError, pubkey::find_program_address};
+use pinocchio::{
+    ProgramResult, account_info::AccountInfo, program_error::ProgramError,
+    pubkey::find_program_address,
+};
 use pinocchio_associated_token_account::instructions::Create;
 
 use crate::{AccountCheck, FundraiserError, TokenAccount};

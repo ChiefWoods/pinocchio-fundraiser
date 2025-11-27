@@ -1,4 +1,9 @@
-use pinocchio::{ProgramResult, account_info::AccountInfo, program_error::ProgramError, sysvars::{Sysvar, rent::Rent}};
+use pinocchio::{
+    ProgramResult,
+    account_info::AccountInfo,
+    program_error::ProgramError,
+    sysvars::{Sysvar, rent::Rent},
+};
 use pinocchio_system::instructions::CreateAccount;
 use pinocchio_token::{instructions::InitializeAccount3, state::TokenAccount as TokenAccountState};
 
@@ -9,11 +14,11 @@ pub struct TokenAccount;
 impl AccountCheck for TokenAccount {
     fn check(account: &AccountInfo) -> Result<(), ProgramError> {
         if account.owner().ne(&pinocchio_token::ID) {
-            return Err(ProgramError::InvalidAccountOwner.into());
+            return Err(ProgramError::InvalidAccountOwner);
         }
 
         if account.data_len().ne(&TokenAccountState::LEN) {
-            return Err(ProgramError::InvalidAccountData.into());
+            return Err(ProgramError::InvalidAccountData);
         }
 
         Ok(())
