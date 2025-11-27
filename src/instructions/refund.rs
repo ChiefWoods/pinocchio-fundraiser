@@ -9,7 +9,7 @@ use pinocchio_token_2022::instructions::{CloseAccount, Transfer};
 
 use crate::{
     AccountCheck, AccountLoad, AssociatedTokenAccount, Contributor, Fundraise, FundraiserError,
-    Handler, MintInterface, Prefix, ProgramAccount, SECONDS_TO_DAYS, SignerAccount,
+    Handler, MintInterface, Prefix, ProgramAccount, SignerAccount,
 };
 
 pub struct RefundAccounts<'a> {
@@ -114,7 +114,7 @@ impl<'a> Handler<'a> for Refund<'a> {
         let duration = fundraise.get_duration();
         let time_started = fundraise.get_time_started();
 
-        if (duration as i64) < (now - time_started) / i64::from(SECONDS_TO_DAYS) {
+        if now > time_started + duration as i64 {
             return Err(FundraiserError::FundraiserEnded.into());
         }
 
@@ -174,7 +174,7 @@ impl<'a> Handler<'a> for Refund<'a> {
             }
             .invoke_signed(&[fundraise_signer])?;
         }
-        
+
         drop(contributor_data);
         ProgramAccount::close(self.accounts.contributor, self.accounts.authority)?;
 

@@ -12,7 +12,7 @@ use pinocchio_token_2022::instructions::Transfer;
 use crate::{
     AccountCheck, AccountLoad, AssociatedTokenAccount, Contributor, ContributorParams, Fundraise,
     FundraiserError, Handler, MAX_BPS, MAX_CONTRIBUTION_PERCENTAGE_BPS, MintInterface, Prefix,
-    ProgramAccount, SECONDS_TO_DAYS, SignerAccount
+    ProgramAccount, SignerAccount,
 };
 
 pub struct ContributeAccounts<'a> {
@@ -187,9 +187,7 @@ impl<'a> Handler<'a> for Contribute<'a> {
         let duration = fundraise.get_duration();
         let time_started = fundraise.get_time_started();
 
-        if now != time_started
-            && duration as i64 > (now - time_started) / i64::from(SECONDS_TO_DAYS)
-        {
+        if now > time_started + duration as i64 {
             return Err(FundraiserError::FundraiserEnded.into());
         }
 
