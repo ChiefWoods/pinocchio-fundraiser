@@ -1,6 +1,11 @@
 use core::mem::size_of;
 use pinocchio::{
-    ProgramResult, account_info::AccountInfo, instruction::Seed, program_error::ProgramError, pubkey::find_program_address, sysvars::{Sysvar, clock::Clock}
+    ProgramResult,
+    account_info::AccountInfo,
+    instruction::Seed,
+    program_error::ProgramError,
+    pubkey::find_program_address,
+    sysvars::{Sysvar, clock::Clock},
 };
 
 use crate::{
@@ -136,13 +141,21 @@ impl<'a> Handler<'a> for Initialize<'a> {
 
         let decimals = match *self.accounts.mint_to_raise.owner() {
             pinocchio_token::ID => {
-                let mint = unsafe { pinocchio_token::state::Mint::from_account_info_unchecked(self.accounts.mint_to_raise)? };
+                let mint = unsafe {
+                    pinocchio_token::state::Mint::from_account_info_unchecked(
+                        self.accounts.mint_to_raise,
+                    )?
+                };
                 mint.decimals()
-            },
+            }
             pinocchio_token_2022::ID => {
-                let mint = unsafe { pinocchio_token_2022::state::Mint::from_account_info_unchecked(self.accounts.mint_to_raise)? };
+                let mint = unsafe {
+                    pinocchio_token_2022::state::Mint::from_account_info_unchecked(
+                        self.accounts.mint_to_raise,
+                    )?
+                };
                 mint.decimals()
-            },
+            }
             _ => return Err(ProgramError::IncorrectProgramId),
         };
 
@@ -170,11 +183,22 @@ mod tests {
     use solana_clock::Clock;
     use solana_instruction::{AccountMeta, Instruction};
     use solana_signer::Signer;
-    use spl_associated_token_account::{get_associated_token_address_with_program_id, solana_program::{clock::SECONDS_PER_DAY, native_token::LAMPORTS_PER_SOL}};
+    use spl_associated_token_account::{
+        get_associated_token_address_with_program_id,
+        solana_program::{clock::SECONDS_PER_DAY, native_token::LAMPORTS_PER_SOL},
+    };
 
-    use crate::{AccountLoad, Fundraise, tests::{
-        constants::{ASSOCIATED_TOKEN_PROGRAM_ID, MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID}, pda::get_fundraise_pda, utils::{build_and_send_transaction, init_mint, init_wallet, setup}
-    }};
+    use crate::{
+        AccountLoad, Fundraise, FundraiserError, MIN_AMOUNT_TO_RAISE,
+        tests::{
+            constants::{
+                ASSOCIATED_TOKEN_PROGRAM_ID, MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID,
+                TOKEN_PROGRAM_ID,
+            },
+            pda::get_fundraise_pda,
+            utils::{assert_error, build_and_send_transaction, init_mint, init_wallet, setup},
+        },
+    };
 
     #[test]
     fn initialize() {
@@ -185,14 +209,19 @@ mod tests {
         let amount_to_raise: u64 = 5_000_000;
         let duration: u64 = SECONDS_PER_DAY; // 1 day
         let fundraise_pda = get_fundraise_pda(&maker.pubkey());
-        let vault = get_associated_token_address_with_program_id(&fundraise_pda, &mint_to_raise, &TOKEN_PROGRAM_ID);
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
         let now = litesvm.get_sysvar::<Clock>().unix_timestamp;
 
         let data = [
             vec![0u8],
             amount_to_raise.to_le_bytes().to_vec(),
             duration.to_le_bytes().to_vec(),
-        ].concat();
+        ]
+        .concat();
         let ix = Instruction {
             program_id: PROGRAM_ID,
             accounts: vec![
@@ -217,5 +246,45 @@ mod tests {
         assert_eq!(fundraise.get_amount_to_raise(), amount_to_raise);
         assert_eq!(fundraise.get_time_started(), now);
         assert_eq!(fundraise.get_duration(), duration);
+    }
+
+    #[test]
+    fn throw_if_below_min_raise_amount() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+
+        let amount_to_raise: u64 = u64::from(MIN_AMOUNT_TO_RAISE) - 1;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let res = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        assert_error(res.unwrap_err(), FundraiserError::BelowMinRaiseAmount);
     }
 }

@@ -196,10 +196,8 @@ impl<'a> Handler<'a> for Contribute<'a> {
 
         let contributor_amount = contributor.get_amount();
 
-        if (contributor_amount
-            > amount_to_raise * u64::from(MAX_CONTRIBUTION_PERCENTAGE_BPS) / u64::from(MAX_BPS))
-            || (contributor_amount + self.data.amount
-                > amount_to_raise * u64::from(MAX_CONTRIBUTION_PERCENTAGE_BPS) / u64::from(MAX_BPS))
+        if contributor_amount + self.data.amount
+            > amount_to_raise * u64::from(MAX_CONTRIBUTION_PERCENTAGE_BPS) / u64::from(MAX_BPS)
         {
             return Err(FundraiserError::MaximumContributionsReached.into());
         }
@@ -234,7 +232,8 @@ mod tests {
     use spl_token_2022::state::Account;
 
     use crate::{
-        AccountLoad, Contributor, Fundraise,
+        AccountLoad, Contributor, Fundraise, FundraiserError, MAX_BPS,
+        MAX_CONTRIBUTION_PERCENTAGE_BPS,
         tests::{
             constants::{
                 ASSOCIATED_TOKEN_PROGRAM_ID, MINT_DECIMALS, PROGRAM_ID, SYSTEM_PROGRAM_ID,
@@ -242,8 +241,8 @@ mod tests {
             },
             pda::{get_contributor_pda, get_fundraise_pda},
             utils::{
-                build_and_send_transaction, fetch_account, init_ata, init_mint,
-                init_wallet, setup,
+                assert_error, build_and_send_transaction, fetch_account, forward_time, init_ata,
+                init_mint, init_wallet, setup,
             },
         },
     };
@@ -339,5 +338,286 @@ mod tests {
             post_authority_ata_bal + contribute_amount
         );
         assert_eq!(pre_vault_bal, post_vault_bal - contribute_amount);
+    }
+
+    #[test]
+    fn throw_if_contribution_too_small() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let authority = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+        let authority_ata = init_ata(litesvm, mint_to_raise, authority.pubkey(), 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        let contribute_amount: u64 = 1u64.pow(MINT_DECIMALS as u32) - 1;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let res = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        assert_error(res.unwrap_err(), FundraiserError::ContributionTooSmall);
+    }
+
+    #[test]
+    fn throw_if_contribution_too_big() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let authority = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+        let authority_ata = init_ata(litesvm, mint_to_raise, authority.pubkey(), 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        let contribute_amount: u64 =
+            amount_to_raise * u64::from(MAX_CONTRIBUTION_PERCENTAGE_BPS) / u64::from(MAX_BPS) + 1;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let res = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        assert_error(res.unwrap_err(), FundraiserError::ContributionTooBig);
+    }
+
+    #[test]
+    fn throw_if_fundraiser_ended() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let authority = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+        let authority_ata = init_ata(litesvm, mint_to_raise, authority.pubkey(), 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        forward_time(litesvm, duration as i64 + 1);
+
+        let contribute_amount: u64 = 500_000;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let res = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        assert_error(res.unwrap_err(), FundraiserError::FundraiserEnded);
+    }
+
+    #[test]
+    fn throw_if_max_contribution_reached() {
+        let (litesvm, _default_payer) = &mut setup();
+        let maker = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let authority = init_wallet(litesvm, LAMPORTS_PER_SOL);
+        let mint_to_raise = init_mint(litesvm, TOKEN_PROGRAM_ID, MINT_DECIMALS, 1_000_000_000);
+        let authority_ata = init_ata(litesvm, mint_to_raise, authority.pubkey(), 1_000_000_000);
+
+        let amount_to_raise: u64 = 5_000_000;
+        let duration: u64 = SECONDS_PER_DAY; // 1 day
+        let fundraise_pda = get_fundraise_pda(&maker.pubkey());
+        let vault = get_associated_token_address_with_program_id(
+            &fundraise_pda,
+            &mint_to_raise,
+            &TOKEN_PROGRAM_ID,
+        );
+
+        let data = [
+            vec![0u8],
+            amount_to_raise.to_le_bytes().to_vec(),
+            duration.to_le_bytes().to_vec(),
+        ]
+        .concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(maker.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+                AccountMeta::new_readonly(ASSOCIATED_TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&maker], &maker.pubkey(), &[ix]);
+
+        let contribute_amount: u64 = 1u64.pow(MINT_DECIMALS as u32) + 1;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let _ = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        let contribute_amount: u64 =
+            (amount_to_raise * u64::from(MAX_CONTRIBUTION_PERCENTAGE_BPS) / u64::from(MAX_BPS) + 1)
+                - contribute_amount;
+        let contributor_pda = get_contributor_pda(&fundraise_pda, &authority.pubkey());
+
+        let data = [vec![1u8], contribute_amount.to_le_bytes().to_vec()].concat();
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(mint_to_raise, false),
+                AccountMeta::new(fundraise_pda, false),
+                AccountMeta::new(contributor_pda, false),
+                AccountMeta::new(authority_ata, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new_readonly(SYSTEM_PROGRAM_ID, false),
+                AccountMeta::new_readonly(TOKEN_PROGRAM_ID, false),
+            ],
+            data,
+        };
+
+        let res = build_and_send_transaction(litesvm, &[&authority], &authority.pubkey(), &[ix]);
+
+        assert_error(
+            res.unwrap_err(),
+            FundraiserError::MaximumContributionsReached,
+        );
     }
 }

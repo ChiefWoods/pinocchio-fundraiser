@@ -16,7 +16,7 @@ use spl_associated_token_account::{
 };
 use spl_token_2022::state::{Account as TokenAccount, AccountState, Mint};
 
-use crate::tests::constants::PROGRAM_ID;
+use crate::{FundraiserError, tests::constants::PROGRAM_ID};
 
 pub fn setup() -> (LiteSVM, Keypair) {
     let mut litesvm = LiteSVM::new();
@@ -58,8 +58,9 @@ pub fn build_and_send_transaction(
     litesvm.send_transaction(tx)
 }
 
-pub fn assert_error(tx_meta: FailedTransactionMetadata, error: &str) {
-    assert!(tx_meta.meta.pretty_logs().contains(&error.to_string()));
+pub fn assert_error(tx_meta: FailedTransactionMetadata, error: FundraiserError) {
+    let hex_string = format!("custom program error: 0x{:x}", error as u32);
+    assert!(tx_meta.meta.pretty_logs().contains(&hex_string));
 }
 
 pub fn forward_time(litesvm: &mut LiteSVM, seconds: i64) {
